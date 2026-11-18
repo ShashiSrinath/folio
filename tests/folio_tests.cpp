@@ -6721,6 +6721,21 @@ private slots:
         QCOMPARE(FolderModel::typeByContent(pipe, unnamed), QString("inode/fifo"));
     }
 
+    void thumbnailsLetARawThumbnailerInstalledLaterDraw()
+    {
+        QTemporaryDir dir;
+        // A camera RAW with no picture inside, and nothing installed to draw it, has no thumbnail.
+        const QString raw = dir.filePath("bare.cr2");
+        write(raw, "no picture inside");
+        QVERIFY(Thumbnails(dir.filePath("cache"), {dir.filePath("none")}).load(raw, "image/x-canon-cr2", 128).isNull());
+
+        // That isn't held against it, so a thumbnailer installed since draws the file.
+        QVERIFY(QImage(10, 20, QImage::Format_RGB32).save(dir.filePath("mark.png")));
+        write(dir.filePath("raw.thumbnailer"), "[Thumbnailer Entry]\nExec=/bin/cp \""
+              + dir.filePath("mark.png").toUtf8() + "\" %o\nMimeType=image/x-canon-cr2;\n");
+        QCOMPARE(Thumbnails(dir.filePath("cache"), {dir.path()}).load(raw, "image/x-canon-cr2", 128).size(), QSize(10, 20));
+    }
+
     void thumbnailsShowACameraRawsEmbeddedJpeg()
     {
         // IFD0's quarter turn applies to the stored 400 by 300 picture unless the JPEG names its own, which then rules.
