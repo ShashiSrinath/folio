@@ -1,0 +1,15 @@
+#!/bin/sh
+# Lists what was deleted from home and an hourly snapshot still holds, latest
+# first; opening one puts it back. Older snapshots compared later go to a cache.
+omarchy-snapshot-files deleted --json --budget 5 | jq -c --arg home "$HOME" '
+  def day: strflocaltime("%Y-%m-%d");
+  (now | floor) as $now | ($now | day) as $today | ($now - 86400 | day) as $yesterday
+  | {items: [.files[:500][]
+      | (.path | split("/")) as $parts
+      | ((.until // $now) | day) as $gone
+      | {id: .path, name: $parts[-1], icon: (if .folder then "folder" else "file" end),
+         subtitle: (if $gone == $today then "Deleted today" elif $gone == $yesterday then "Deleted yesterday"
+                    else ["Deleted on %1", $gone] end),
+         details: [["Folder", ($parts[:-1] | join("/") | if . == $home then "~" elif startswith($home + "/") then "~" + .[($home | length):] else . end)],
+                   ["Copy from", (.seen | strflocaltime("%Y-%m-%d %H:%M"))]],
+         open: {run: ["./restore", .path], label: "Restore"}}]}'

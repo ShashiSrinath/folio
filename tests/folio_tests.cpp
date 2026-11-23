@@ -6358,6 +6358,79 @@ private slots:
         QCOMPARE(rows("/home/me/Dropbox/a.pdf", binWith(dir.filePath("none"), {})), QJsonArray());
     }
 
+    void snapshotsPluginListsDeletedFiles()
+    {
+        QTemporaryDir dir;
+        // Times as omarchy-snapshot-files gives them: the last snapshot that
+        // held each, and the first that didn't (null: gone since the newest).
+        const qint64 now = QDateTime::currentSecsSinceEpoch();
+        const qint64 old = QDateTime(QDate(2026, 1, 2), QTime(12, 0)).toSecsSinceEpoch();
+        const QByteArray files = QJsonDocument(QJsonObject{{"snapshots", 3}, {"complete", true}, {"files", QJsonArray{
+            QJsonObject{{"path", dir.filePath("Documents/a b.txt")}, {"folder", false}, {"snapshot", 3}, {"seen", now - 600}, {"until", QJsonValue()}},
+            QJsonObject{{"path", dir.filePath("Pictures/trip")}, {"folder", true}, {"snapshot", 2}, {"seen", now - 90000}, {"until", now - 86400}},
+            QJsonObject{{"path", dir.filePath("notes.md")}, {"folder", false}, {"snapshot", 1}, {"seen", old - 3600}, {"until", old}},
+        }}}).toJson(QJsonDocument::Compact);
+        const QString bin = binWith(dir.filePath("bin"), {{"omarchy-snapshot-files",
+            "#!/bin/sh\n[ \"$*\" = \"deleted --json --budget 5\" ] || exit 2\ncat <<'EOF'\n" + files + "\nEOF\n"}});
+        const auto path = pathAt(bin);
+        const auto plugin = bundledPlugin("snapshots");
+        QCOMPARE(plugin.id, QString("snapshots"));
+        const Plugins::Run run = runBundled(plugin, plugin.poll, bin, dir.path());
+        QVERIFY2(run.ok(), qPrintable(run.lastError));
+        const auto output = Plugins::parseOutput(run.out);
+        QVERIFY(output);
+        QCOMPARE(output->items.size(), 3);
+
+        // Latest first, as they came, each by its own name and kind.
+        const auto &file = output->items.at(0);
+        QCOMPARE(file.id, dir.filePath("Documents/a b.txt"));
+        QCOMPARE(file.name, QString("a b.txt"));
+        QCOMPARE(file.icon, QString("file"));
+        QCOMPARE(Plugins::text(plugin, file.subtitle), QString("Deleted today"));
+        QCOMPARE(file.details.at(0), QJsonValue(QJsonArray{"Folder", "~/Documents"}));
+        QCOMPARE(file.details.at(1).toArray().at(0).toString(), QString("Copy from"));
+        // Opening one puts it back.
+        QCOMPARE(file.open.value("run").toArray(), QJsonArray({"./restore", dir.filePath("Documents/a b.txt")}));
+        QCOMPARE(Plugins::text(plugin, file.open.value("label")), QString("Restore"));
+
+        const auto &folder = output->items.at(1);
+        QCOMPARE(folder.icon, QString("folder"));
+        QCOMPARE(Plugins::text(plugin, folder.subtitle), QString("Deleted yesterday"));
+        QCOMPARE(folder.details.at(0), QJsonValue(QJsonArray{"Folder", "~/Pictures"}));
+        QCOMPARE(Plugins::text(plugin, output->items.at(2).subtitle), QString("Deleted on 2026-01-02"));
+        QCOMPARE(output->items.at(2).details.at(0), QJsonValue(QJsonArray{"Folder", "~"}));
+
+        // Without omarchy-snapshot-files, which only Omarchy has, the plugin is off.
+        const auto none = pathAt(dir.filePath("nothing"));
+        QVERIFY(bundledPlugin("snapshots").id.isEmpty());
+    }
+
+    void snapshotsPluginRestoresAndGoesThere()
+    {
+        QTemporaryDir dir;
+        const QString bin = binWith(dir.filePath("bin"), {{"omarchy-snapshot-files",
+            "#!/bin/sh\nprintf '%s|' \"$@\" > \"$HOME/asked\"\n"
+            "case \"$2\" in *taken*) echo 'omarchy-snapshot-files: ~/taken.txt is already there' >&2; exit 1 ;; esac\n"
+            "echo 'Restored it.'\n"}});
+        const auto path = pathAt(bin);
+        const auto plugin = bundledPlugin("snapshots");
+        const QString file = dir.filePath("Documents/a \"b\".txt");
+        const Plugins::Run restored = runBundled(plugin, {"./restore", file}, bin, dir.path());
+        QVERIFY2(restored.ok(), qPrintable(restored.lastError));
+        QFile asked(dir.filePath("asked"));
+        QVERIFY(asked.open(QIODevice::ReadOnly));
+        QCOMPARE(asked.readAll(), ("restore|" + file + "|").toUtf8());
+        const QJsonObject said = QJsonDocument::fromJson(restored.out).object();
+        QCOMPARE(Plugins::text(plugin, said.value("notice")), QString("Restored a \"b\".txt."));
+        QCOMPARE(said.value("path").toString(), dir.filePath("Documents"));
+
+        // Its failure says which file and why, in words Folio can translate.
+        const Plugins::Run failed = runBundled(plugin, {"./restore", dir.filePath("taken.txt")}, bin, dir.path());
+        QVERIFY(!failed.ok());
+        QCOMPARE(Plugins::text(plugin, QJsonDocument::fromJson(failed.out).object().value("error")),
+                 QString("Couldn't restore taken.txt: ~/taken.txt is already there"));
+    }
+
     void localSendPluginNeedsLocalSend()
     {
         QTemporaryDir dir;

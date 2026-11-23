@@ -2,8 +2,8 @@
 
 A plugin adds something Folio doesn't know about on its own: a section in the
 sidebar, a status on one of its rows, entries in the right-click menu, rows
-in the details column, or a view in the main pane. Tailscale, Dropbox and LocalSend come with
-Folio as plugins, and they use nothing that isn't described here, so a plugin
+in the details column, or a view in the main pane. Tailscale, Dropbox, LocalSend and Omarchy's
+snapshots come with Folio as plugins, and they use nothing that isn't described here, so a plugin
 you write sits on equal footing with them.
 
 A plugin is a folder holding a `manifest.json` and some commands. Folio never
@@ -23,7 +23,7 @@ in, or Folio won't run it.
 
 | Folder | What's there |
 | --- | --- |
-| `/usr/share/folio/plugins/<id>/` | Plugins installed by packages, including the three that come with Folio. |
+| `/usr/share/folio/plugins/<id>/` | Plugins installed by packages, including the four that come with Folio. |
 | `~/.local/share/folio/plugins/<id>/` (`$XDG_DATA_HOME`) | Your own. One with the same id replaces the packaged one entirely. |
 
 The folder's name is the plugin's id: lowercase letters, digits and dashes,
@@ -594,3 +594,18 @@ there.
   ]
 }
 ```
+
+**snapshots** lists the files and folders deleted from your home folder that Omarchy's hourly snapshots of `/home` still hold, latest first, and puts one back where it was when you open it.
+
+```json
+{
+  "folio": 1,
+  "requires": ["omarchy-snapshot-files", "jq"],
+  "poll": { "command": ["./deleted"], "every": 300 },
+  "section": { "title": "Snapshots", "rows": "opened" },
+  "view": { "title": "Deleted Files", "icon": "deleted.svg",
+            "empty": "Nothing deleted that a snapshot still holds" }
+}
+```
+
+`deleted` prints at most 500 items from `omarchy-snapshot-files deleted --json`, which compares each snapshot with the next and the newest with your home as it is, caching what it compared and stopping after 5 seconds so a poll never times out; whatever it hasn't compared yet comes in with the next poll. Each item opens with `{"run": ["./restore", path], "label": "Restore"}`, and `restore` runs `omarchy-snapshot-files restore`, then goes to the folder the file is back in. Since the items go when they're restored, the sidebar section is just the row that opens the view. Without Omarchy there's no `omarchy-snapshot-files`, so the plugin is off.
