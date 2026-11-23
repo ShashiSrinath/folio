@@ -6450,6 +6450,8 @@ private slots:
         QVERIFY(partial);
         QCOMPARE(partial->items.size(), 1);
         QCOMPARE(partial->items.at(0).details, QJsonArray({QJsonArray{"Folder", "/elsewhere"}}));
+        // Times that aren't numbers are unknown, so it went after nothing known: today.
+        QCOMPARE(Plugins::text(plugin, partial->items.at(0).subtitle), QString("Deleted today"));
 
         // Gone since the newest snapshot, which was long ago (snapshots stopped,
         // say): all that's known is that it went after it.
