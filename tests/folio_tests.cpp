@@ -6201,7 +6201,7 @@ private slots:
         QTemporaryDir folder, home;
         // A slow poll, which reads its items before it takes its time.
         writePlugin(folder.path(), "acts", R"({"folio": 1, "view": {"title": "Acts"}, "poll": {"command": ["./poll"], "every": 86400}})",
-                    {{"poll", "#!/bin/sh\nout=$(cat items.json)\nsleep 1\nprintf '%s' \"$out\"\n"},
+                    {{"poll", "#!/bin/sh\nout=$(cat items.json)\n: > read\nsleep 1\nprintf '%s' \"$out\"\n"},
                      {"items.json", R"({"items": [{"id": "a", "name": "a", "open": {"run": ["true"]}},
                                                 {"id": "z", "name": "z", "open": {"run": ["cp", "next.json", "items.json"]}}]})"},
                      {"next.json", R"({"items": [{"id": "done", "name": "done"}]})"}});
@@ -6211,10 +6211,10 @@ private slots:
 
         // a's poll has read the items and is still running when z changes
         // them; what z did still shows, without waiting for the timer.
-        bool ran = false;
-        plugins.run("plugin:acts/a", [&](const Plugins::Result &) { ran = true; });
-        QTRY_VERIFY(ran);
-        QTest::qWait(300);
+        const QString read = folder.filePath("acts/read");
+        QFile::remove(read);
+        plugins.run("plugin:acts/a", [](const Plugins::Result &) {});
+        QTRY_VERIFY(QFile::exists(read));
         plugins.run("plugin:acts/z", [](const Plugins::Result &) {});
         QTRY_COMPARE_WITH_TIMEOUT(names(), QStringList({"done"}), 5000);
     }

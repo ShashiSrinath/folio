@@ -575,6 +575,8 @@ void Plugins::poll(const QString &plugin, bool afterAction) {
     connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, plugin, dir = m->dir, command = m->poll] {
         watcher->deleteLater();
         m_polling.remove(plugin);
+        // Taken now: a poll that ends early, or starts another, has answered it.
+        const bool again = m_pollAgain.remove(plugin);
         const Manifest *now = manifest(plugin);
         if (!now)
             return;
@@ -605,7 +607,7 @@ void Plugins::poll(const QString &plugin, bool afterAction) {
             emit detailsChanged();
         }
         rebuild();
-        if (m_pollAgain.remove(plugin))
+        if (again)
             poll(plugin);
     });
     watcher->setFuture(QtConcurrent::run(&m_pool, [plugin = *m, environment = environment(*m), stop = m_stop] {
