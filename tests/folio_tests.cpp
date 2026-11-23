@@ -6466,8 +6466,11 @@ private slots:
         // latest kept, rather than being turned away whole.
         QJsonArray longOnes;
         const QString deep = dir.filePath(QString("d").repeated(700));
-        for (int i = 0; i < 500; ++i)
+        for (int i = 0; i < 400; ++i)
             longOnes << QJsonObject{{"path", deep + "/" + QString::number(i)}, {"seen", now}, {"until", QJsonValue()}};
+        // An older, short one after them would still fit, but the list ends
+        // where the first one didn't, so nothing older stands in for newer.
+        longOnes << QJsonObject{{"path", dir.filePath("short.txt")}, {"seen", now}, {"until", QJsonValue()}};
         const QByteArray longPrinted = QJsonDocument(QJsonObject{{"files", longOnes}}).toJson(QJsonDocument::Compact);
         const QString longBin = binWith(dir.filePath("long"), {{"omarchy-snapshot-files", "#!/bin/sh\ncat <<'EOF'\n" + longPrinted + "\nEOF\n"}});
         const Plugins::Run longRun = runBundled(plugin, plugin.poll, longBin, dir.path());
@@ -6475,8 +6478,9 @@ private slots:
         QVERIFY(longRun.out.size() < 1024 * 1024);
         const auto longOutput = Plugins::parseOutput(longRun.out);
         QVERIFY(longOutput);
-        QVERIFY(longOutput->items.size() > 100 && longOutput->items.size() < 500);
+        QVERIFY(longOutput->items.size() > 100 && longOutput->items.size() < 400);
         QCOMPARE(longOutput->items.at(0).name, QString("0"));
+        QVERIFY(longOutput->items.last().name != QString("short.txt"));
 
         // When omarchy-snapshot-files fails, so does the poll, rather than
         // saying nothing was deleted.

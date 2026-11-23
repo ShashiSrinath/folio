@@ -23,6 +23,6 @@ printf '%s\n' "$files" | jq -c --arg home "$HOME" '
                    + if .seen then [["Copy from", (.seen | strflocaltime("%Y-%m-%d %H:%M"))]] else [] end),
          open: {run: ["./restore", .path], label: "Restore"}}]
   # Folio takes at most a megabyte, so long paths end the list before that.
-  | {items: (reduce .[] as $item ({list: [], size: 0};
+  | {items: (reduce .[] as $item ({list: [], size: 0, full: false};
       ($item | tojson | utf8bytelength) as $size
-      | if .size + $size > 900000 then . else .list += [$item] | .size += $size + 1 end) | .list)}'
+      | if .full or .size + $size > 900000 then .full = true else .list += [$item] | .size += $size + 1 end) | .list)}'
