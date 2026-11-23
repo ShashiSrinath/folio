@@ -8,7 +8,7 @@ printf '%s\n' "$files" | jq -c --arg home "$HOME" '
   # Half a day before local midnight is yesterday, even on a day of 23 or 25 hours.
   | ($now | localtime) as $t | ($now - ($t[3] * 3600 + $t[4] * 60 + ($t[5] | floor)) - 43200 | day) as $yesterday
   # A record that is not an object is left out, and a time that is not a number is unknown.
-  | {items: [[(.files // [])[] | select(type == "object" and (.path | type) == "string")][:500][]
+  | [[(.files // [])[] | select(type == "object" and (.path | type) == "string")][:500][]
       | .seen |= (if type == "number" then . else null end) | .until |= (if type == "number" then . else null end)
       | (.path | split("/")) as $parts
       | {id: .path, name: $parts[-1], icon: (if .folder then "folder" else "file" end),
@@ -21,4 +21,8 @@ printf '%s\n' "$files" | jq -c --arg home "$HOME" '
                     end),
          details: ([["Folder", ($parts[:-1] | join("/") | if . == $home then "~" elif startswith($home + "/") then "~" + .[($home | length):] else . end)]]
                    + if .seen then [["Copy from", (.seen | strflocaltime("%Y-%m-%d %H:%M"))]] else [] end),
-         open: {run: ["./restore", .path], label: "Restore"}}]}'
+         open: {run: ["./restore", .path], label: "Restore"}}]
+  # Folio takes at most a megabyte, so long paths end the list before that.
+  | {items: (reduce .[] as $item ({list: [], size: 0};
+      ($item | tojson | utf8bytelength) as $size
+      | if .size + $size > 900000 then . else .list += [$item] | .size += $size + 1 end) | .list)}'
