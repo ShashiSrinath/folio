@@ -6397,12 +6397,12 @@ private slots:
         // Noon, so a day of 23 or 25 hours doesn't move it to another day.
         const qint64 yesterday = QDateTime(QDate::currentDate().addDays(-1), QTime(12, 0)).toSecsSinceEpoch();
         const qint64 old = QDateTime(QDate(2026, 1, 2), QTime(12, 0)).toSecsSinceEpoch();
-        const QByteArray files = QJsonDocument(QJsonObject{{"snapshots", 3}, {"complete", true}, {"files", QJsonArray{
-            QJsonObject{{"path", dir.filePath("Documents/a b.txt")}, {"folder", false}, {"snapshot", 4}, {"seen", now - 600}, {"until", QJsonValue()}},
+        const QByteArray files = QJsonDocument(QJsonObject{{"snapshots", 4}, {"complete", true}, {"files", QJsonArray{
+            QJsonObject{{"path", dir.filePath("Documents/a b.txt")}, {"folder", false}, {"snapshot", 4}, {"seen", now - 1}, {"until", QJsonValue()}},
             QJsonObject{{"path", dir.filePath("Pictures/trip")}, {"folder", true}, {"snapshot", 3}, {"seen", yesterday - 3600}, {"until", yesterday}},
             QJsonObject{{"path", dir.filePath("notes.md")}, {"folder", false}, {"snapshot", 2}, {"seen", old - 3600}, {"until", old}},
-            // Gone since a snapshot long ago, with none taken since: the machine
-            // was off, so it went soon after, not today.
+            // Gone since a snapshot long ago, with none taken since: all that's
+            // known is that it went after it.
             QJsonObject{{"path", dir.filePath("draft.md")}, {"folder", false}, {"snapshot", 1}, {"seen", old - 7200}, {"until", QJsonValue()}},
         }}}).toJson(QJsonDocument::Compact);
         const QString bin = binWith(dir.filePath("bin"), {{"omarchy-snapshot-files",
@@ -6423,7 +6423,7 @@ private slots:
         QCOMPARE(file.icon, QString("file"));
         QCOMPARE(Plugins::text(plugin, file.subtitle), QString("Deleted today"));
         QCOMPARE(file.details.at(0), QJsonValue(QJsonArray{"Folder", "~/Documents"}));
-        QCOMPARE(file.details.at(1), QJsonValue(QJsonArray{"Copy from", QDateTime::fromSecsSinceEpoch(now - 600).toString("yyyy-MM-dd HH:mm")}));
+        QCOMPARE(file.details.at(1), QJsonValue(QJsonArray{"Copy from", QDateTime::fromSecsSinceEpoch(now - 1).toString("yyyy-MM-dd HH:mm")}));
         // Opening one puts it back.
         QCOMPARE(file.open.value("run").toArray(), QJsonArray({"./restore", dir.filePath("Documents/a b.txt")}));
         QCOMPARE(Plugins::text(plugin, file.open.value("label")), QString("Restore"));
@@ -6434,7 +6434,7 @@ private slots:
         QCOMPARE(folder.details.at(0), QJsonValue(QJsonArray{"Folder", "~/Pictures"}));
         QCOMPARE(Plugins::text(plugin, output->items.at(2).subtitle), QString("Deleted on 2026-01-02"));
         QCOMPARE(output->items.at(2).details.at(0), QJsonValue(QJsonArray{"Folder", "~"}));
-        QCOMPARE(Plugins::text(plugin, output->items.at(3).subtitle), QString("Deleted on 2026-01-02"));
+        QCOMPARE(Plugins::text(plugin, output->items.at(3).subtitle), QString("Deleted since 2026-01-02"));
 
         // A record without what it needs is left out, or shown without it,
         // rather than emptying the list.
@@ -6444,8 +6444,11 @@ private slots:
             const Plugins::Run r = runBundled(plugin, plugin.poll, stub, dir.path());
             return r.ok() ? Plugins::parseOutput(r.out) : std::nullopt;
         };
-        QVERIFY(listed(R"({"snapshots": 0})")->items.isEmpty());
+        const auto none = listed(R"({"snapshots": 0})");
+        QVERIFY(none);
+        QVERIFY(none->items.isEmpty());
         const auto partial = listed(R"({"files": [{"folder": false}, {"path": "/elsewhere/x.txt", "seen": null}]})");
+        QVERIFY(partial);
         QCOMPARE(partial->items.size(), 1);
         QCOMPARE(partial->items.at(0).details, QJsonArray({QJsonArray{"Folder", "/elsewhere"}}));
 
@@ -6455,7 +6458,7 @@ private slots:
         QCOMPARE(runBundled(plugin, plugin.poll, failing, dir.path()).code, 3);
 
         // Without omarchy-snapshot-files, which only Omarchy has, the plugin
-        // is off, jq or not.
+        // is off, even with jq installed.
         const auto jqOnly = pathAt(binWith(dir.filePath("jq-only"), {}));
         QVERIFY(bundledPlugin("snapshots").id.isEmpty());
     }
@@ -6486,6 +6489,13 @@ private slots:
                  QString("Couldn't restore taken.txt: ~/taken.txt is already there"));
 
         // A failure that says nothing still says which file.
+        // Only the last line of what it says is why; a warning may come first.
+        const QString chatty = binWith(dir.filePath("chatty"), {{"omarchy-snapshot-files",
+            "#!/bin/sh\necho 'warning: cache unreadable' >&2\necho 'omarchy-snapshot-files: ~/y.txt is already there' >&2\nexit 1\n"}});
+        const Plugins::Run twoLines = runBundled(plugin, {"./restore", dir.filePath("y.txt")}, chatty, dir.path());
+        QCOMPARE(Plugins::text(plugin, QJsonDocument::fromJson(twoLines.out).object().value("error")),
+                 QString("Couldn't restore y.txt: ~/y.txt is already there"));
+
         const QString silent = binWith(dir.filePath("silent"), {{"omarchy-snapshot-files", "#!/bin/sh\nexit 1\n"}});
         const Plugins::Run quiet = runBundled(plugin, {"./restore", dir.filePath("x.txt")}, silent, dir.path());
         QVERIFY(!quiet.ok());
