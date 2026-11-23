@@ -6401,7 +6401,7 @@ private slots:
         const qint64 yesterday = QDateTime(QDate::currentDate().addDays(-1), QTime(12, 0)).toSecsSinceEpoch();
         const qint64 old = QDateTime(QDate(2026, 1, 2), QTime(12, 0)).toSecsSinceEpoch();
         const QByteArray files = QJsonDocument(QJsonObject{{"snapshots", 4}, {"complete", true}, {"files", QJsonArray{
-            QJsonObject{{"path", dir.filePath("Documents/a b.txt")}, {"folder", false}, {"snapshot", 4}, {"seen", now - 1}, {"until", QJsonValue()}},
+            QJsonObject{{"path", dir.filePath("Documents/a b.txt")}, {"folder", false}, {"snapshot", 4}, {"seen", now}, {"until", QJsonValue()}},
             QJsonObject{{"path", dir.filePath("Pictures/trip")}, {"folder", true}, {"snapshot", 3}, {"seen", yesterday - 3600}, {"until", yesterday}},
             QJsonObject{{"path", dir.filePath("notes.md")}, {"folder", false}, {"snapshot", 2}, {"seen", old - 3600}, {"until", old}},
         }}}).toJson(QJsonDocument::Compact);
@@ -6423,7 +6423,7 @@ private slots:
         QCOMPARE(file.icon, QString("file"));
         QCOMPARE(Plugins::text(plugin, file.subtitle), QString("Deleted today"));
         QCOMPARE(file.details.at(0), QJsonValue(QJsonArray{"Folder", "~/Documents"}));
-        QCOMPARE(file.details.at(1), QJsonValue(QJsonArray{"Copy from", QDateTime::fromSecsSinceEpoch(now - 1).toString("yyyy-MM-dd HH:mm")}));
+        QCOMPARE(file.details.at(1), QJsonValue(QJsonArray{"Copy from", QDateTime::fromSecsSinceEpoch(now).toString("yyyy-MM-dd HH:mm")}));
         // Opening one puts it back.
         QCOMPARE(file.open.value("run").toArray(), QJsonArray({"./restore", dir.filePath("Documents/a b.txt")}));
         QCOMPARE(Plugins::text(plugin, file.open.value("label")), QString("Restore"));
@@ -6446,7 +6446,7 @@ private slots:
         const auto none = listed(R"({"snapshots": 0})");
         QVERIFY(none);
         QVERIFY(none->items.isEmpty());
-        const auto partial = listed(R"({"files": ["x", {"folder": false}, {"path": "/elsewhere/x.txt", "seen": "soon"}]})");
+        const auto partial = listed(R"({"files": ["x", {"folder": false}, {"path": "/elsewhere/x.txt", "seen": "soon", "until": "soon"}]})");
         QVERIFY(partial);
         QCOMPARE(partial->items.size(), 1);
         QCOMPARE(partial->items.at(0).details, QJsonArray({QJsonArray{"Folder", "/elsewhere"}}));
@@ -6457,6 +6457,7 @@ private slots:
             QJsonObject{{"path", dir.filePath("draft.md")}, {"folder", false}, {"snapshot", 1}, {"seen", old}, {"until", QJsonValue()}}}}})
                                       .toJson(QJsonDocument::Compact));
         QVERIFY(stale);
+        QCOMPARE(stale->items.size(), 1);
         QCOMPARE(Plugins::text(plugin, stale->items.at(0).subtitle), QString("Deleted since 2026-01-02"));
 
         // When omarchy-snapshot-files fails, so does the poll, rather than
