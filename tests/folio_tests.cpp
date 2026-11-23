@@ -6117,9 +6117,16 @@ private slots:
         QCOMPARE(zulu.value("extension").toString(), QString("SMB"));
         QCOMPARE(zulu.value("icon").toString(), QString("drive"));
         QCOMPARE(model.get(1).value("details").toList().at(0).toList(), QVariantList({"Host", "alpha.example"}));
-        // Opening one is called what the plugin says it does, or plain Open.
+        // Opening one is called what the plugin says it does, in its
+        // catalog's words, or plain Open.
         QCOMPARE(zulu.value("openLabel").toString(), QString("Connect"));
         QCOMPARE(model.get(1).value("openLabel").toString(), QString());
+        QDir(folder.filePath("servers")).mkpath("i18n");
+        write(folder.filePath("servers/i18n/da.json"), R"({"Connect": "Forbind"})");
+        Plugins danish("da", {folder.path()}, home.filePath("folio-da.conf"));
+        QTRY_COMPARE(danish.views().value("plugin:servers").toMap().value("items").toList().size(), 3);
+        QCOMPARE(danish.views().value("plugin:servers").toMap().value("items").toList().at(0).toMap().value("openLabel").toString(),
+                 QString("Forbind"));
         model.setQuery("ALP");
         QVERIFY(loaded.wait(3000));
         QCOMPARE(model.count(), 1);
@@ -6387,11 +6394,16 @@ private slots:
         // Times as omarchy-snapshot-files gives them: the last snapshot that
         // held each, and the first that didn't (null: gone since the newest).
         const qint64 now = QDateTime::currentSecsSinceEpoch();
+        // Noon, so a day of 23 or 25 hours doesn't move it to another day.
+        const qint64 yesterday = QDateTime(QDate::currentDate().addDays(-1), QTime(12, 0)).toSecsSinceEpoch();
         const qint64 old = QDateTime(QDate(2026, 1, 2), QTime(12, 0)).toSecsSinceEpoch();
         const QByteArray files = QJsonDocument(QJsonObject{{"snapshots", 3}, {"complete", true}, {"files", QJsonArray{
-            QJsonObject{{"path", dir.filePath("Documents/a b.txt")}, {"folder", false}, {"snapshot", 3}, {"seen", now - 600}, {"until", QJsonValue()}},
-            QJsonObject{{"path", dir.filePath("Pictures/trip")}, {"folder", true}, {"snapshot", 2}, {"seen", now - 90000}, {"until", now - 86400}},
-            QJsonObject{{"path", dir.filePath("notes.md")}, {"folder", false}, {"snapshot", 1}, {"seen", old - 3600}, {"until", old}},
+            QJsonObject{{"path", dir.filePath("Documents/a b.txt")}, {"folder", false}, {"snapshot", 4}, {"seen", now - 600}, {"until", QJsonValue()}},
+            QJsonObject{{"path", dir.filePath("Pictures/trip")}, {"folder", true}, {"snapshot", 3}, {"seen", yesterday - 3600}, {"until", yesterday}},
+            QJsonObject{{"path", dir.filePath("notes.md")}, {"folder", false}, {"snapshot", 2}, {"seen", old - 3600}, {"until", old}},
+            // Gone since a snapshot long ago, with none taken since: the machine
+            // was off, so it went soon after, not today.
+            QJsonObject{{"path", dir.filePath("draft.md")}, {"folder", false}, {"snapshot", 1}, {"seen", old - 7200}, {"until", QJsonValue()}},
         }}}).toJson(QJsonDocument::Compact);
         const QString bin = binWith(dir.filePath("bin"), {{"omarchy-snapshot-files",
             "#!/bin/sh\n[ \"$*\" = \"deleted --json --budget 5\" ] || exit 2\ncat <<'EOF'\n" + files + "\nEOF\n"}});
@@ -6402,7 +6414,7 @@ private slots:
         QVERIFY2(run.ok(), qPrintable(run.lastError));
         const auto output = Plugins::parseOutput(run.out);
         QVERIFY(output);
-        QCOMPARE(output->items.size(), 3);
+        QCOMPARE(output->items.size(), 4);
 
         // Latest first, as they came, each by its own name and kind.
         const auto &file = output->items.at(0);
@@ -6411,7 +6423,7 @@ private slots:
         QCOMPARE(file.icon, QString("file"));
         QCOMPARE(Plugins::text(plugin, file.subtitle), QString("Deleted today"));
         QCOMPARE(file.details.at(0), QJsonValue(QJsonArray{"Folder", "~/Documents"}));
-        QCOMPARE(file.details.at(1).toArray().at(0).toString(), QString("Copy from"));
+        QCOMPARE(file.details.at(1), QJsonValue(QJsonArray{"Copy from", QDateTime::fromSecsSinceEpoch(now - 600).toString("yyyy-MM-dd HH:mm")}));
         // Opening one puts it back.
         QCOMPARE(file.open.value("run").toArray(), QJsonArray({"./restore", dir.filePath("Documents/a b.txt")}));
         QCOMPARE(Plugins::text(plugin, file.open.value("label")), QString("Restore"));
@@ -6422,9 +6434,29 @@ private slots:
         QCOMPARE(folder.details.at(0), QJsonValue(QJsonArray{"Folder", "~/Pictures"}));
         QCOMPARE(Plugins::text(plugin, output->items.at(2).subtitle), QString("Deleted on 2026-01-02"));
         QCOMPARE(output->items.at(2).details.at(0), QJsonValue(QJsonArray{"Folder", "~"}));
+        QCOMPARE(Plugins::text(plugin, output->items.at(3).subtitle), QString("Deleted on 2026-01-02"));
 
-        // Without omarchy-snapshot-files, which only Omarchy has, the plugin is off.
-        const auto none = pathAt(dir.filePath("nothing"));
+        // A record without what it needs is left out, or shown without it,
+        // rather than emptying the list.
+        auto listed = [&](const QByteArray &printed) {
+            const QString stub = binWith(dir.filePath("bin-" + QString::number(qHash(printed))),
+                                         {{"omarchy-snapshot-files", "#!/bin/sh\ncat <<'EOF'\n" + printed + "\nEOF\n"}});
+            const Plugins::Run r = runBundled(plugin, plugin.poll, stub, dir.path());
+            return r.ok() ? Plugins::parseOutput(r.out) : std::nullopt;
+        };
+        QVERIFY(listed(R"({"snapshots": 0})")->items.isEmpty());
+        const auto partial = listed(R"({"files": [{"folder": false}, {"path": "/elsewhere/x.txt", "seen": null}]})");
+        QCOMPARE(partial->items.size(), 1);
+        QCOMPARE(partial->items.at(0).details, QJsonArray({QJsonArray{"Folder", "/elsewhere"}}));
+
+        // When omarchy-snapshot-files fails, so does the poll, rather than
+        // saying nothing was deleted.
+        const QString failing = binWith(dir.filePath("failing"), {{"omarchy-snapshot-files", "#!/bin/sh\necho 'cannot read' >&2\nexit 3\n"}});
+        QCOMPARE(runBundled(plugin, plugin.poll, failing, dir.path()).code, 3);
+
+        // Without omarchy-snapshot-files, which only Omarchy has, the plugin
+        // is off, jq or not.
+        const auto jqOnly = pathAt(binWith(dir.filePath("jq-only"), {}));
         QVERIFY(bundledPlugin("snapshots").id.isEmpty());
     }
 
@@ -6452,6 +6484,12 @@ private slots:
         QVERIFY(!failed.ok());
         QCOMPARE(Plugins::text(plugin, QJsonDocument::fromJson(failed.out).object().value("error")),
                  QString("Couldn't restore taken.txt: ~/taken.txt is already there"));
+
+        // A failure that says nothing still says which file.
+        const QString silent = binWith(dir.filePath("silent"), {{"omarchy-snapshot-files", "#!/bin/sh\nexit 1\n"}});
+        const Plugins::Run quiet = runBundled(plugin, {"./restore", dir.filePath("x.txt")}, silent, dir.path());
+        QVERIFY(!quiet.ok());
+        QCOMPARE(Plugins::text(plugin, QJsonDocument::fromJson(quiet.out).object().value("error")), QString("Couldn't restore x.txt."));
     }
 
     void localSendPluginNeedsLocalSend()
