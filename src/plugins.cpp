@@ -556,11 +556,17 @@ QProcessEnvironment Plugins::environment(const Manifest &plugin) const {
     return environment;
 }
 
-void Plugins::poll(const QString &plugin) {
+void Plugins::poll(const QString &plugin, bool afterAction) {
     const Manifest *m = manifest(plugin);
-    // One at a time: a poll that's due while the last still runs is skipped.
-    if (!m || m->poll.isEmpty() || m_polling.contains(plugin))
+    if (!m || m->poll.isEmpty())
         return;
+    // One at a time: a poll that's due while the last still runs is skipped,
+    // but one after an action runs next, or its effect waits for the timer.
+    if (m_polling.contains(plugin)) {
+        if (afterAction)
+            m_pollAgain.insert(plugin);
+        return;
+    }
     m_polling.insert(plugin);
     // Read in the pool too: a megabyte of JSON takes long enough to parse
     // that the window would skip frames over it.
@@ -599,6 +605,8 @@ void Plugins::poll(const QString &plugin) {
             emit detailsChanged();
         }
         rebuild();
+        if (m_pollAgain.remove(plugin))
+            poll(plugin);
     });
     watcher->setFuture(QtConcurrent::run(&m_pool, [plugin = *m, environment = environment(*m), stop = m_stop] {
         const Run run = execute(plugin, plugin.poll, environment, pollTimeout, stop.get());
@@ -898,7 +906,7 @@ void Plugins::act(const Manifest &plugin, const QString &key, const QString &lab
             watcher->deleteLater();
             done(watcher->result());
             // Whatever it changed shows at once.
-            poll(plugin.id);
+            poll(plugin.id, true);
             next(key);
         });
         // Work that was asked for takes as long as it takes.
