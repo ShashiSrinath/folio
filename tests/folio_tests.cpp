@@ -6096,7 +6096,7 @@ private slots:
         writePlugin(folder.path(), "servers", R"({"folio": 1, "poll": {"command": ["./servers"]},
             "view": {"title": "Servers", "label": "All", "icon": "drive"}})",
                     {{"servers", "#!/bin/sh\ncat <<EOF\n{\"items\": ["
-                                 "{\"id\": \"z\", \"name\": \"zulu\", \"subtitle\": \"SMB\", \"icon\": \"drive\", \"open\": {\"path\": \"" + home.path().toUtf8() + "\"}},"
+                                 "{\"id\": \"z\", \"name\": \"zulu\", \"subtitle\": \"SMB\", \"icon\": \"drive\", \"open\": {\"path\": \"" + home.path().toUtf8() + "\", \"label\": \"Connect\"}},"
                                  "{\"id\": \"a/b\", \"name\": \"alpha\", \"details\": [[\"Host\", \"alpha.example\"]]},"
                                  "{\"id\": \"r\", \"name\": \"relative\", \"open\": {\"path\": \".\"}}]}\nEOF\n"}});
         Plugins plugins("en", {folder.path()}, home.filePath("folio.conf"));
@@ -6117,6 +6117,9 @@ private slots:
         QCOMPARE(zulu.value("extension").toString(), QString("SMB"));
         QCOMPARE(zulu.value("icon").toString(), QString("drive"));
         QCOMPARE(model.get(1).value("details").toList().at(0).toList(), QVariantList({"Host", "alpha.example"}));
+        // Opening one is called what the plugin says it does, or plain Open.
+        QCOMPARE(zulu.value("openLabel").toString(), QString("Connect"));
+        QCOMPARE(model.get(1).value("openLabel").toString(), QString());
         model.setQuery("ALP");
         QVERIFY(loaded.wait(3000));
         QCOMPARE(model.count(), 1);

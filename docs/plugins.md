@@ -401,6 +401,8 @@ An item's `open` is one of:
 | `{"mount": "sftp://host/", "verified": true}` | Folio mounts the URL through GVfs (`sftp://`, `smb://`, `davs://`, anything GVfs mounts) and goes to the URL's folder. A URL naming only a server lands in the folder at your home's path on it when there is one (one person's machines tend to share a layout), or its top otherwise. A password request is asked in the window. `verified` says the plugin has already made sure who's on the other end, as Tailscale does, so Folio answers GVfs's host-key questions yes; without it, Folio asks you, as it does for an address typed in the path bar. |
 | `{"run": ["./wake", "studio"]}` | Folio runs the command as it runs an action, and acts on its [result](#results). |
 
+Any of them can carry a `label`, what the details column's button and the right-click menu call opening the item when it isn't just Open: `{"run": ["./restore", "/home/me/notes.md"], "label": "Restore"}`. Translated.
+
 ## Actions
 
 ```json

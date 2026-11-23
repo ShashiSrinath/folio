@@ -623,7 +623,8 @@ QVariantMap Plugins::itemMap(const Manifest &plugin, const Item &item) const {
     const QString root = item.open.contains("mount") ? Mounter::folderFor(item.open.value("mount").toString()) : folder;
     return {{"plugin", plugin.id}, {"id", item.id}, {"path", pathOf(plugin.id, item.id)}, {"name", item.name},
             {"icon", icon(plugin, item.icon)}, {"subtitle", item.subtitle.isUndefined() ? QString() : text(plugin, item.subtitle)},
-            {"details", rowsOf(plugin, item.details)}, {"root", root}, {"folder", folder}, {"forgettable", plugin.opened}};
+            {"details", rowsOf(plugin, item.details)}, {"root", root}, {"folder", folder}, {"forgettable", plugin.opened},
+            {"openLabel", item.open.contains("label") ? text(plugin, item.open.value("label")) : QString()}};
 }
 
 void Plugins::rebuild() {
